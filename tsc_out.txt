@@ -1,0 +1,4 @@
+﻿src/components/dashboard/AccessEvolutionChart.tsx(3,5): error TS6133: 'LineChart' is declared but its value is never read.
+src/components/tables/UserTable.tsx(94,36): error TS2339: Property 'align' does not exist on type '{ readonly key: "nome"; readonly label: "Nome"; readonly sortable: true; } | { readonly key: "acessos"; readonly label: "Acessos"; readonly sortable: true; readonly align: "right"; } | { ...; } | { ...; }'.
+  Property 'align' does not exist on type '{ readonly key: "nome"; readonly label: "Nome"; readonly sortable: true; }'.
+src/components/upload/UploadScreen.tsx(1,59): error TS6133: 'Loader' is declared but its value is never read.
