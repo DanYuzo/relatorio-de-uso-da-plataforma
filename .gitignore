@@ -47,6 +47,7 @@ Thumbs.db
 .aiox-core/
 .aiox/
 .claude/
+.github/
 
 # AIOX Local (AIOX)
 .aiox-core/local/
