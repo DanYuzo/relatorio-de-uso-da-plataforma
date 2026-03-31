@@ -37,7 +37,6 @@ node_modules/
 dist/
 build/
 logs/
-docs/
 
 # IDE & OS (AIOX)
 Thumbs.db
@@ -60,3 +59,6 @@ Thumbs.db
 
 # Generated reports output
 output/
+
+# Docs
+docs/
