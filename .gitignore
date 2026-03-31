@@ -43,6 +43,11 @@ Thumbs.db
 .idea/
 *.swp
 
+# AIOX (framework)
+.aiox-core/
+.aiox/
+.claude/
+
 # AIOX Local (AIOX)
 .aiox-core/local/
 .claude/settings.local.json
