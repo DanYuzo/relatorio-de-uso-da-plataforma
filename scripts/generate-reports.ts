@@ -338,7 +338,9 @@ async function main(): Promise<void> {
   const webhookSecret = process.env.PROSPERUS_WEBHOOK_SECRET!;
 
   let webhookOk = 0;
+  let webhookSkipped = 0;
   let webhookFail = 0;
+  const skippedEmails: string[] = [];
 
   for (const { email, empresa } of recipients) {
     const html = htmlCache[empresa];
@@ -348,6 +350,10 @@ async function main(): Promise<void> {
       if (result.ok) {
         console.log(`  [WEBHOOK OK] ${email}`);
         webhookOk++;
+      } else if (result.status === 404) {
+        console.warn(`  [WEBHOOK SKIP] ${email}: member not found on Prosperus (not registered)`);
+        webhookSkipped++;
+        skippedEmails.push(email);
       } else {
         console.error(`  [WEBHOOK FAIL] ${email}: ${result.status} ${result.message ?? ''}`);
         webhookFail++;
@@ -365,13 +371,19 @@ async function main(): Promise<void> {
   console.log(`Recipients generated: ${filesGenerated}`);
   console.log(`File write errors: ${fileErrors}`);
   console.log(`Webhook OK: ${webhookOk}`);
+  console.log(`Webhook SKIP (not registered): ${webhookSkipped}`);
   console.log(`Webhook FAIL: ${webhookFail}`);
   console.log(`Output directory: ${outputDir}`);
+  if (skippedEmails.length > 0) {
+    console.warn('');
+    console.warn(`[WARN] ${skippedEmails.length} recipient(s) not registered on Prosperus:`);
+    skippedEmails.forEach((e) => console.warn(`  - ${e}`));
+  }
   console.log('');
 
-  // Exit code logic
-  if (webhookOk === 0 && recipients.length > 0) {
-    console.error('[FATAL] All webhooks failed');
+  // Exit code logic — only fail on real errors (network, 5xx), not on 404 skips
+  if (webhookFail > 0 && webhookOk === 0) {
+    console.error('[FATAL] All webhooks failed with server/network errors');
     process.exit(1);
   }
 
