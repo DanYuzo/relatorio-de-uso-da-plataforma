@@ -68,7 +68,7 @@ async function readReferenciaFromSheets(): Promise<ReferenciaRow[]> {
   const sheets = google.sheets({ version: 'v4', auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: process.env.GOOGLE_SHEET_ID!,
-    range: 'A:H', // 8 columns: Nome, Cel, Email, Empresa, Programa, PC, Observacoes, Recebe o relatorio?
+    range: 'A:Z', // Dynamic range — reads all columns present in the spreadsheet
   });
 
   const rows = response.data.values;
@@ -79,6 +79,7 @@ async function readReferenciaFromSheets(): Promise<ReferenciaRow[]> {
 
   // Map header row to object keys (same logic as sheets-proxy)
   const headers = rows[0] as string[];
+  console.log(`[SHEETS] Headers found: ${JSON.stringify(headers)}`);
   const data: ReferenciaRow[] = rows
     .slice(1)
     .map((row) => {

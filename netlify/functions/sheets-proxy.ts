@@ -56,7 +56,7 @@ const handler: Handler = async (event: HandlerEvent) => {
     const sheets = google.sheets({ version: "v4", auth });
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: "A:H", // 8 columns: Nome, Cel, Email, Empresa, Programa, PC, Observacoes, Recebe o relatorio?
+      range: "A:Z", // Dynamic range — reads all columns present in the spreadsheet
     });
 
     const rows = response.data.values;
