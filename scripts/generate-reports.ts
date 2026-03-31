@@ -96,7 +96,7 @@ async function readReferenciaFromSheets(): Promise<ReferenciaRow[]> {
 // ─── CursoEduca API Direct Client ─────────────────────────────────────────
 
 const CURSEDUCA_PAGE_SIZE = 1000;
-const CURSEDUCA_CONCURRENT_PAGES = 5;
+const CURSEDUCA_CONCURRENT_PAGES = 3;
 
 const CURSEDUCA_BASE_URLS: Record<string, string> = {
   members: 'https://prof.curseduca.pro',
@@ -111,6 +111,13 @@ function getCursEducaHeaders(): Record<string, string> {
   };
 }
 
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 2000;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function fetchCursEducaPage<T>(
   service: 'members' | 'contents',
   endpoint: string,
@@ -120,28 +127,46 @@ async function fetchCursEducaPage<T>(
   const url = new URL(endpoint, baseUrl);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: getCursEducaHeaders(),
-  });
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: getCursEducaHeaders(),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`CursoEduca API error ${response.status} on ${endpoint}: ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      // Retry on 502/503/504 (transient server errors)
+      if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt < MAX_RETRIES) {
+        const delay = RETRY_BASE_DELAY_MS * attempt;
+        console.warn(`  [RETRY] ${endpoint} returned ${response.status}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})`);
+        await sleep(delay);
+        continue;
+      }
+      throw new Error(`CursoEduca API error ${response.status} on ${endpoint}: ${errorText}`);
+    }
+
+    let json: ApiPaginatedResponse<T>;
+    try {
+      json = await response.json() as ApiPaginatedResponse<T>;
+    } catch {
+      if (attempt < MAX_RETRIES) {
+        const delay = RETRY_BASE_DELAY_MS * attempt;
+        console.warn(`  [RETRY] ${endpoint} returned invalid JSON, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})`);
+        await sleep(delay);
+        continue;
+      }
+      throw new Error(`Invalid JSON response from CursoEduca API on ${endpoint}`);
+    }
+
+    if (!json.data || !Array.isArray(json.data)) {
+      throw new Error(`Invalid API response on ${endpoint}: missing 'data' field`);
+    }
+
+    return json;
   }
 
-  let json: ApiPaginatedResponse<T>;
-  try {
-    json = await response.json() as ApiPaginatedResponse<T>;
-  } catch {
-    throw new Error(`Invalid JSON response from CursoEduca API on ${endpoint}`);
-  }
-
-  if (!json.data || !Array.isArray(json.data)) {
-    throw new Error(`Invalid API response on ${endpoint}: missing 'data' field`);
-  }
-
-  return json;
+  // Should not reach here, but TypeScript needs it
+  throw new Error(`Failed to fetch ${endpoint} after ${MAX_RETRIES} attempts`);
 }
 
 async function fetchAllCursEducaPages<T>(
