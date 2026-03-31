@@ -103,15 +103,10 @@ const CURSEDUCA_BASE_URLS: Record<string, string> = {
   contents: 'https://clas.curseduca.pro',
 };
 
-function getCursEducaHeaders(service: 'members' | 'contents'): Record<string, string> {
-  if (service === 'members') {
-    return {
-      'Content-Type': 'application/json',
-      'api-key': process.env.CURSEDUCA_API_KEY!,
-    };
-  }
+function getCursEducaHeaders(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
+    'api_key': process.env.CURSEDUCA_API_KEY!,
     'Authorization': `Bearer ${process.env.ACCESS_TOKEN!}`,
   };
 }
@@ -127,7 +122,7 @@ async function fetchCursEducaPage<T>(
 
   const response = await fetch(url.toString(), {
     method: 'GET',
-    headers: getCursEducaHeaders(service),
+    headers: getCursEducaHeaders(),
   });
 
   if (!response.ok) {
