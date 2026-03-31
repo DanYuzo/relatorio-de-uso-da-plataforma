@@ -1,4 +1,4 @@
-import { Upload, FileText, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertTriangle, X, Cloud, Loader2 } from 'lucide-react';
 import { REQUIRED_FILES, matchFileConfig, validateFileStructure, parseCSV } from '../../services/csvParser.ts';
 import type { FileValidation } from '../../types/csv.ts';
 import type { ReferenciaRow } from '../../types/csv.ts';
@@ -23,6 +23,7 @@ interface UploadScreenProps {
     fetchError: string | null;
     onRetry: () => void;
     isFetching: boolean;
+    onAutoGenerate: () => void;
 }
 
 export default function UploadScreen({
@@ -42,6 +43,7 @@ export default function UploadScreen({
     fetchError,
     onRetry,
     isFetching,
+    onAutoGenerate,
 }: UploadScreenProps) {
     const uploadedCount = Object.keys(uploadedFiles).length;
     const progress = (uploadedCount / REQUIRED_FILES.length) * 100;
@@ -147,6 +149,94 @@ export default function UploadScreen({
                 <div className="card">
                     {/* Data Source Toggle */}
                     <DataSourceSelector selected={dataSource} onSelect={onDataSourceChange} />
+
+                    {/* Auto Mode */}
+                    {dataSource === 'auto' && (
+                        <div className="space-y-4">
+                            <div className="text-center p-6 border border-prosperus-gold/20 rounded-xl bg-prosperus-gold/5">
+                                <Cloud className="h-10 w-10 text-prosperus-gold mx-auto mb-3" />
+                                <h3 className="text-lg font-semibold text-prosperus-white mb-1">
+                                    Modo Automático
+                                </h3>
+                                <p className="text-sm text-prosperus-white/50 mb-4">
+                                    Busca automática da planilha de referência (Google Sheets) e dos 4 datasets da CursoEduca API. Nenhum upload necessário.
+                                </p>
+
+                                <button
+                                    onClick={onAutoGenerate}
+                                    disabled={isFetching}
+                                    className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold text-sm transition-all ${
+                                        isFetching
+                                            ? 'bg-prosperus-white/10 text-prosperus-white/30 cursor-not-allowed'
+                                            : 'bg-prosperus-gold text-prosperus-midnight hover:bg-prosperus-gold-light cursor-pointer shadow-lg shadow-prosperus-gold/20'
+                                    }`}
+                                >
+                                    {isFetching ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            Buscando dados...
+                                        </>
+                                    ) : (
+                                        'Gerar Dashboard'
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Progress indicators */}
+                            {fetchProgress && Object.keys(fetchProgress).length > 0 && (
+                                <div className="space-y-2">
+                                    {Object.entries(fetchProgress).map(([endpoint, { message, percent }]) => (
+                                        <div key={endpoint} className="flex items-center gap-3 p-2.5 rounded-lg bg-prosperus-midnight/50 border border-prosperus-white/10">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between text-xs mb-1">
+                                                    <span className="text-prosperus-white/70 font-medium">{endpoint}</span>
+                                                    <span className="text-prosperus-white/40">{percent}%</span>
+                                                </div>
+                                                <div className="progress-track h-1.5">
+                                                    <div
+                                                        className="progress-fill medium"
+                                                        style={{ width: `${percent}%` }}
+                                                    />
+                                                </div>
+                                                <p className="text-xs text-prosperus-white/40 mt-0.5">{message}</p>
+                                            </div>
+                                            {percent >= 100 && <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Error display */}
+                            {fetchError && (
+                                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                                    <div className="flex items-start gap-2">
+                                        <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm text-red-300 font-medium">Erro ao buscar dados</p>
+                                            <p className="text-xs text-red-400/70 mt-0.5">{fetchError}</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={onAutoGenerate}
+                                        className="mt-2 text-xs text-prosperus-gold hover:text-prosperus-gold-light transition-colors"
+                                    >
+                                        Tentar novamente
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Instructions */}
+                            <div className="p-3 bg-prosperus-gold/5 border border-prosperus-gold/10 rounded-lg">
+                                <h4 className="text-xs font-medium text-prosperus-gold/70 mb-1.5">Como funciona:</h4>
+                                <ul className="text-xs text-prosperus-white/40 space-y-0.5 list-disc list-inside">
+                                    <li>Referência é carregada automaticamente do Google Sheets</li>
+                                    <li>Dados de membros, acessos, conclusões e matrículas são buscados da API CursoEduca</li>
+                                    <li>Nenhum arquivo precisa ser enviado manualmente</li>
+                                    <li>Exportação usa lógica multi-destinatário automática</li>
+                                </ul>
+                            </div>
+                        </div>
+                    )}
 
                     {/* API Mode */}
                     {dataSource === 'api' && (

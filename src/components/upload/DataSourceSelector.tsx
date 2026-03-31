@@ -1,4 +1,4 @@
-import { Wifi, Upload } from 'lucide-react';
+import { Cloud, Wifi, Upload } from 'lucide-react';
 import type { DataSource } from '../../services/dataSourceOrchestrator.ts';
 
 interface DataSourceSelectorProps {
@@ -7,6 +7,7 @@ interface DataSourceSelectorProps {
 }
 
 const options: { value: DataSource; label: string; icon: typeof Wifi }[] = [
+    { value: 'auto', label: 'Automático', icon: Cloud },
     { value: 'api', label: 'Conexão API', icon: Wifi },
     { value: 'csv', label: 'Upload Manual', icon: Upload },
 ];

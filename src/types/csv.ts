@@ -11,6 +11,7 @@ export interface ReferenciaRow {
     Programa?: string;
     PC?: string;
     'Observações'?: string;
+    'Recebe o relatório?'?: string;
 }
 
 /** acessos.csv — Platform access log */

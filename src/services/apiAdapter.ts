@@ -14,7 +14,10 @@ import type {
 } from '../types/csv.ts';
 import {
   buildEmailToEmpresaMap,
+  buildEmailToNomeMap,
   enrichWithEmpresa,
+  enrichWithNome,
+  injectMissingAccess,
   getUniqueEmpresas,
 } from './csvParser.ts';
 
@@ -119,7 +122,17 @@ export function buildParsedDatasetFromApi(
   enrichWithEmpresa(progresso, emailToEmpresa);
   enrichWithEmpresa(ultimoAcesso, emailToEmpresa);
 
+  // Enrich with nome (referencia is source of truth for names)
+  const emailToNome = buildEmailToNomeMap(referencia);
+  enrichWithNome(acessos, emailToNome);
+  enrichWithNome(conclusoes, emailToNome);
+  enrichWithNome(progresso, emailToNome);
+  enrichWithNome(ultimoAcesso, emailToNome);
+
+  // Inject missing access records where completions exist without access
+  const enrichedAcessos = injectMissingAccess(acessos, conclusoes, referencia);
+
   const empresasUnicas = getUniqueEmpresas(referencia);
 
-  return { referencia, acessos, conclusoes, progresso, ultimoAcesso, empresasUnicas };
+  return { referencia, acessos: enrichedAcessos, conclusoes, progresso, ultimoAcesso, empresasUnicas };
 }

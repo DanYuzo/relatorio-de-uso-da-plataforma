@@ -9,7 +9,7 @@ import type {
     ProgressoRow,
     UltimoAcessoRow,
 } from '../types/csv';
-import { safeParseDate } from '../utils/dateHelpers';
+import { safeParseDate, toISODay } from '../utils/dateHelpers';
 
 // ─── File Configuration ─────────────────────────────────────────────────────
 
@@ -133,6 +133,99 @@ export function enrichWithEmpresa<T extends { Email?: string; Empresa?: string }
 }
 
 /**
+ * Creates email→nome mapping from referencia.csv.
+ */
+export function buildEmailToNomeMap(
+    referencia: ReferenciaRow[],
+): Record<string, string> {
+    const map: Record<string, string> = {};
+    referencia.forEach((row) => {
+        if (row.Email && row.Nome) {
+            map[row.Email.toLowerCase().trim()] = row.Nome;
+        }
+    });
+    return map;
+}
+
+/**
+ * Enriches a dataset by normalizing the Nome field via email lookup against referencia.
+ * Unlike enrichWithEmpresa, does NOT overwrite when email is not found — preserves original Nome.
+ */
+export function enrichWithNome<T extends { Email?: string; Nome?: string }>(
+    dataset: T[],
+    emailToNomeMap: Record<string, string>,
+): void {
+    dataset.forEach((row) => {
+        if (row.Email) {
+            const emailLower = row.Email.toLowerCase().trim();
+            const nome = emailToNomeMap[emailLower];
+            if (nome !== undefined) {
+                row.Nome = nome;
+            }
+            // Se não encontrado, mantém Nome original (AC3)
+        }
+    });
+}
+
+/**
+ * Injects missing access records for days where a user has completions but no access logged.
+ * Returns a new array containing original acessos + injected ones.
+ */
+export function injectMissingAccess(
+    acessos: AcessoRow[],
+    conclusoes: ConclusaoRow[],
+    referencia: ReferenciaRow[],
+): AcessoRow[] {
+    // Build lookup maps from referencia
+    const emailToNome = buildEmailToNomeMap(referencia);
+    const emailToEmpresa = buildEmailToEmpresaMap(referencia);
+
+    // Build set of existing access: "email|YYYY-MM-DD"
+    const existingAccess = new Set<string>();
+    acessos.forEach((a) => {
+        if (a.Email && a.Data) {
+            const day = toISODay(a.Data);
+            if (day) {
+                existingAccess.add(`${a.Email.toLowerCase().trim()}|${day}`);
+            }
+        }
+    });
+
+    // Group conclusion dates by email
+    const conclusionDays = new Map<string, Set<string>>();
+    conclusoes.forEach((c) => {
+        if (c.Email && c['Data de conclusão']) {
+            const email = c.Email.toLowerCase().trim();
+            const day = toISODay(c['Data de conclusão']);
+            if (day) {
+                if (!conclusionDays.has(email)) {
+                    conclusionDays.set(email, new Set());
+                }
+                conclusionDays.get(email)!.add(day);
+            }
+        }
+    });
+
+    // Inject missing accesses
+    const injected: AcessoRow[] = [];
+    conclusionDays.forEach((days, email) => {
+        days.forEach((day) => {
+            const key = `${email}|${day}`;
+            if (!existingAccess.has(key)) {
+                injected.push({
+                    Nome: emailToNome[email] ?? undefined,
+                    Email: email,
+                    Data: day,
+                    Empresa: emailToEmpresa[email] ?? 'Não identificada',
+                });
+            }
+        });
+    });
+
+    return [...acessos, ...injected];
+}
+
+/**
  * Builds the first-email-per-company map for output filename generation.
  * The first occurrence of each Empresa in referencia.csv determines the filename.
  */
@@ -146,6 +239,35 @@ export function buildCompanyFirstEmailMap(
         }
     });
     return map;
+}
+
+// ─── Recipient Mapping ─────────────────────────────────────────────────────
+
+/** Represents a single report recipient (person with "Sim" in "Recebe o relatório?") */
+export interface Recipient {
+    email: string;
+    empresa: string;
+}
+
+/**
+ * Builds the list of recipients who should receive a report.
+ * Only includes rows where "Recebe o relatório?" is "Sim" (case-insensitive).
+ */
+export function buildRecipientMap(referencia: ReferenciaRow[]): Recipient[] {
+    return referencia
+        .filter(row => row.Email && row.Empresa && row['Recebe o relatório?']?.trim().toLowerCase() === 'sim')
+        .map(row => ({
+            email: row.Email!.toLowerCase().trim(),
+            empresa: row.Empresa!,
+        }));
+}
+
+/**
+ * Detects whether the referencia dataset contains the "Recebe o relatório?" column.
+ * Used to decide between multi-recipient mode and fallback mode.
+ */
+export function hasRecipientColumn(referencia: ReferenciaRow[]): boolean {
+    return referencia.some(row => row['Recebe o relatório?'] !== undefined);
 }
 
 /**
@@ -167,19 +289,29 @@ export function getUniqueEmpresas(referencia: ReferenciaRow[]): string[] {
  */
 export function processDataset(uploadedFiles: Record<string, unknown[]>): ParsedDataset {
     const referencia = (uploadedFiles['referencia.csv'] ?? []) as ReferenciaRow[];
-    const acessos = (uploadedFiles['acessos.csv'] ?? []) as AcessoRow[];
+    let acessos = (uploadedFiles['acessos.csv'] ?? []) as AcessoRow[];
     const conclusoes = (uploadedFiles['conclusoes.csv'] ?? []) as ConclusaoRow[];
     const progresso = (uploadedFiles['progresso.csv'] ?? []) as ProgressoRow[];
     const ultimoAcesso = (uploadedFiles['ultimo_acesso.csv'] ?? []) as UltimoAcessoRow[];
 
-    // Build email → empresa mapping
+    // 1. Build email → empresa mapping
     const emailToEmpresa = buildEmailToEmpresaMap(referencia);
 
-    // Enrich all datasets with company information
+    // 2. Enrich all datasets with company information
     enrichWithEmpresa(acessos, emailToEmpresa);
     enrichWithEmpresa(conclusoes, emailToEmpresa);
     enrichWithEmpresa(progresso, emailToEmpresa);
     enrichWithEmpresa(ultimoAcesso, emailToEmpresa);
+
+    // 3. Enrich all datasets with normalized names from referencia (Story 2.6)
+    const emailToNome = buildEmailToNomeMap(referencia);
+    enrichWithNome(acessos, emailToNome);
+    enrichWithNome(conclusoes, emailToNome);
+    enrichWithNome(progresso, emailToNome);
+    enrichWithNome(ultimoAcesso, emailToNome);
+
+    // 4. Inject missing access records where conclusao exists without access (Story 2.6)
+    acessos = injectMissingAccess(acessos, conclusoes, referencia);
 
     // Compute unique companies
     const empresasUnicas = getUniqueEmpresas(referencia);

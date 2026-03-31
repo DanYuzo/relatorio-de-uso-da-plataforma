@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import type { ParsedDataset } from '../types/csv';
 import type { DashboardMetrics } from '../types/metrics';
-import { buildCompanyFirstEmailMap, filterByEmpresa } from '../services/csvParser';
+import { buildCompanyFirstEmailMap, buildRecipientMap, hasRecipientColumn, filterByEmpresa } from '../services/csvParser';
 import { computeMetrics } from '../services/metricsComputer';
 import { formatTimestamp } from '../utils/dateHelpers';
 import { toISODay } from '../utils/dateHelpers';
@@ -709,19 +709,39 @@ export async function exportDashboards(
   onProgress?: (pct: number) => void,
 ): Promise<void> {
   const zip = new JSZip();
-  const firstEmailMap = buildCompanyFirstEmailMap(data.referencia);
 
-  for (let i = 0; i < selectedEmpresas.length; i++) {
-    const empresa = selectedEmpresas[i];
-    const companyData = filterByEmpresa(data, empresa);
-    const metrics = computeMetrics(companyData);
-    const html = generateCompanyHTML(empresa, metrics, companyData);
+  // Detect mode: multi-recipient or fallback
+  const useRecipients = hasRecipientColumn(data.referencia);
 
-    const firstEmail = firstEmailMap[empresa] ?? empresa.replace(/[^a-zA-Z0-9]/g, '_');
-    const fileName = `${firstEmail}.html`;
+  if (useRecipients) {
+    const recipients = buildRecipientMap(data.referencia);
+    // Filter by selected companies
+    const filtered = recipients.filter(r => selectedEmpresas.includes(r.empresa));
+    // Cache HTML per company to avoid reprocessing
+    const htmlCache: Record<string, string> = {};
 
-    zip.file(fileName, html);
-    onProgress?.(Math.round(((i + 1) / selectedEmpresas.length) * 100));
+    for (let i = 0; i < filtered.length; i++) {
+      const { email, empresa } = filtered[i];
+      if (!htmlCache[empresa]) {
+        const companyData = filterByEmpresa(data, empresa);
+        const metrics = computeMetrics(companyData);
+        htmlCache[empresa] = generateCompanyHTML(empresa, metrics, companyData);
+      }
+      zip.file(`${email}.html`, htmlCache[empresa]);
+      onProgress?.(Math.round(((i + 1) / filtered.length) * 100));
+    }
+  } else {
+    // Fallback: original logic (first email per company)
+    const firstEmailMap = buildCompanyFirstEmailMap(data.referencia);
+    for (let i = 0; i < selectedEmpresas.length; i++) {
+      const empresa = selectedEmpresas[i];
+      const companyData = filterByEmpresa(data, empresa);
+      const metrics = computeMetrics(companyData);
+      const html = generateCompanyHTML(empresa, metrics, companyData);
+      const firstEmail = firstEmailMap[empresa] ?? empresa.replace(/[^a-zA-Z0-9]/g, '_');
+      zip.file(`${firstEmail}.html`, html);
+      onProgress?.(Math.round(((i + 1) / selectedEmpresas.length) * 100));
+    }
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });

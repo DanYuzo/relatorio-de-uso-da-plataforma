@@ -10,10 +10,15 @@ import { buildParsedDatasetFromApi } from './apiAdapter.ts';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type DataSource = 'api' | 'csv';
+export type DataSource = 'auto' | 'api' | 'csv';
 
 export interface ApiLoadConfig {
   referencia: ReferenciaRow[];
+  dateRange?: { start: string; end: string };
+  onProgress?: (endpoint: string, message: string, percent: number) => void;
+}
+
+export interface AutoLoadConfig {
   dateRange?: { start: string; end: string };
   onProgress?: (endpoint: string, message: string, percent: number) => void;
 }
@@ -25,6 +30,10 @@ export interface CsvLoadConfig {
 // ─── Orchestrator ───────────────────────────────────────────────────────────
 
 export async function loadData(
+  source: 'auto',
+  config: AutoLoadConfig,
+): Promise<ParsedDataset>;
+export async function loadData(
   source: 'csv',
   config: CsvLoadConfig,
 ): Promise<ParsedDataset>;
@@ -34,12 +43,39 @@ export async function loadData(
 ): Promise<ParsedDataset>;
 export async function loadData(
   source: DataSource,
-  config: ApiLoadConfig | CsvLoadConfig,
+  config: AutoLoadConfig | ApiLoadConfig | CsvLoadConfig,
 ): Promise<ParsedDataset> {
   if (source === 'csv') {
     return processDataset((config as CsvLoadConfig).uploadedFiles);
   }
 
+  if (source === 'auto') {
+    const autoConfig = config as AutoLoadConfig;
+    const { dateRange, onProgress } = autoConfig;
+
+    // Step 1: Fetch referencia from Google Sheets via sheets-proxy
+    onProgress?.('Referência', 'Buscando planilha Google Sheets...', 0);
+    const res = await fetch('/.netlify/functions/sheets-proxy');
+    if (!res.ok) throw new Error(`Sheets proxy error: ${res.status}`);
+    const referencia: ReferenciaRow[] = await res.json();
+    onProgress?.('Referência', 'Planilha carregada', 100);
+
+    // Step 2: Fetch 4 API datasets in parallel
+    const scoped = (label: string) =>
+      onProgress ? (msg: string, pct: number) => onProgress(label, msg, pct) : undefined;
+
+    const [members, access, progress, enrollments] = await Promise.all([
+      fetchMembers(scoped('Membros')),
+      fetchAccessReports(dateRange, scoped('Acessos')),
+      fetchProgressReports(dateRange, scoped('Conclusões')),
+      fetchEnrollments(scoped('Matrículas')),
+    ]);
+
+    // Step 3: Build dataset
+    return buildParsedDatasetFromApi(referencia, members, access, progress, enrollments);
+  }
+
+  // source === 'api'
   const apiConfig = config as ApiLoadConfig;
   const { referencia, dateRange, onProgress } = apiConfig;
 

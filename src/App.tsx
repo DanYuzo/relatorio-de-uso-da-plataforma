@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback } from 'react';
 import type { ParsedDataset, ReferenciaRow, FileValidation } from './types/csv.ts';
 import type { UsuarioTabela } from './types/metrics.ts';
-import { processDataset, filterByEmpresa, filterByDateRange, REQUIRED_FILES } from './services/csvParser.ts';
+import { processDataset, filterByEmpresa, filterByDateRange, REQUIRED_FILES, hasRecipientColumn, buildRecipientMap, buildCompanyFirstEmailMap } from './services/csvParser.ts';
 import { computeMetrics } from './services/metricsComputer.ts';
-import { exportDashboards } from './utils/exportHelpers.ts';
+import { exportDashboards, generateCompanyHTML } from './utils/exportHelpers.ts';
+import type { SyncRecipient } from './components/dashboard/DashboardHeader.tsx';
 import type { PeriodValue } from './components/dashboard/period-utils.ts';
 import { getPeriodDateRange } from './components/dashboard/period-utils.ts';
 import type { DataSource } from './services/dataSourceOrchestrator.ts';
@@ -31,8 +32,8 @@ export default function App() {
   // Navigation
   const [view, setView] = useState<AppView>('upload');
 
-  // Data source mode (default API as primary data source)
-  const [dataSource, setDataSource] = useState<DataSource>('api');
+  // Data source mode (default Auto as primary data source)
+  const [dataSource, setDataSource] = useState<DataSource>('auto');
 
   // Upload state (CSV mode)
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, unknown[]>>({});
@@ -81,6 +82,42 @@ export default function App() {
     if (!currentData) return null;
     return computeMetrics(currentData);
   }, [currentData]);
+
+  // ── Derived: sync recipients for webhook ──
+  const syncRecipients = useMemo<SyncRecipient[]>(() => {
+    if (!data) return [];
+    const companies = empresaFilter ? [empresaFilter] : data.empresasUnicas;
+    const htmlCache: Record<string, string> = {};
+
+    const buildHtml = (empresa: string): string => {
+      if (!htmlCache[empresa]) {
+        const companyData = filterByEmpresa(data, empresa);
+        const m = computeMetrics(companyData);
+        htmlCache[empresa] = generateCompanyHTML(empresa, m, companyData);
+      }
+      return htmlCache[empresa];
+    };
+
+    const useRecipients = hasRecipientColumn(data.referencia);
+    if (useRecipients) {
+      const recipients = buildRecipientMap(data.referencia);
+      return recipients
+        .filter(r => companies.includes(r.empresa))
+        .map(r => ({
+          email: r.email,
+          html: buildHtml(r.empresa),
+          title: `Relatório ${r.empresa} — ${new Date().toISOString().split('T')[0]}`,
+        }));
+    }
+
+    // Fallback: first email per company
+    const firstEmailMap = buildCompanyFirstEmailMap(data.referencia);
+    return companies.map(empresa => ({
+      email: firstEmailMap[empresa] ?? empresa,
+      html: buildHtml(empresa),
+      title: `Relatório ${empresa} — ${new Date().toISOString().split('T')[0]}`,
+    }));
+  }, [data, empresaFilter]);
 
   // ── Handlers ──
 
@@ -184,6 +221,31 @@ export default function App() {
     handleApiFetch();
   }, [handleApiFetch]);
 
+  // Auto mode fetch (zero uploads — sheets-proxy + API)
+  const handleAutoGenerate = useCallback(async () => {
+    setIsFetching(true);
+    setFetchError(null);
+    setFetchProgress({});
+
+    try {
+      const dataset = await loadData('auto', {
+        onProgress: (endpoint, message, percent) =>
+          setFetchProgress(prev => ({ ...prev, [endpoint]: { message, percent } })),
+      });
+
+      setData(dataset);
+
+      await new Promise((r) => setTimeout(r, 300));
+      setView('dashboard');
+    } catch (err) {
+      console.error('Error in auto mode:', err);
+      setFetchError(err instanceof Error ? err.message : String(err));
+      setFetchProgress(null);
+    } finally {
+      setIsFetching(false);
+    }
+  }, []);
+
   const handleExport = useCallback(async () => {
     if (!data) return;
     setExporting(true);
@@ -246,6 +308,7 @@ export default function App() {
         fetchError={fetchError}
         onRetry={handleRetry}
         isFetching={isFetching}
+        onAutoGenerate={handleAutoGenerate}
       />
     );
   }
@@ -274,6 +337,7 @@ export default function App() {
           onExport={handleExport}
           exporting={exporting}
           exportProgress={exportProgress}
+          syncRecipients={syncRecipients}
         />
 
         {/* Filters */}
