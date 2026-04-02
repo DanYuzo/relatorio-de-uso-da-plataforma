@@ -286,14 +286,17 @@ function computeProgressByContent(
                     ? Math.max(0, Math.min(100, curso.progresso))
                     : 0;
 
-            result.push({
-                nome: curso.nome,
-                email: curso.email,
-                conteudo: curso.conteudo,
-                aulasCompletas: curso.aulasCompletas,
-                modulosCompletos: curso.modulos.size,
-                progresso: pct,
-            });
+            // Skip entries with 0% progress – only show actual progress
+            if (pct > 0) {
+                result.push({
+                    nome: curso.nome,
+                    email: curso.email,
+                    conteudo: curso.conteudo,
+                    aulasCompletas: curso.aulasCompletas,
+                    modulosCompletos: curso.modulos.size,
+                    progresso: pct,
+                });
+            }
         });
     });
 
