@@ -136,8 +136,8 @@ async function fetchCursEducaPage<T>(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
-      // Retry on 502/503/504 (transient server errors)
-      if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt < MAX_RETRIES) {
+      // Retry on 500/502/503/504 (transient server errors)
+      if ((response.status === 500 || response.status === 502 || response.status === 503 || response.status === 504) && attempt < MAX_RETRIES) {
         const delay = RETRY_BASE_DELAY_MS * attempt;
         console.warn(`  [RETRY] ${endpoint} returned ${response.status}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})`);
         await sleep(delay);
