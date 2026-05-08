@@ -143,19 +143,15 @@ export function computeMetrics(data: ParsedDataset): DashboardMetrics {
         return b.acessos - a.acessos;
     });
 
-    // Sort and limit history for each user (Optimization for export)
+    // Sort full history for each user (descending by date)
     usuariosTabela.forEach(u => {
-        // Sort Access History (desc) and keep 5
         u.historico.sort((a, b) =>
             (safeParseDate(b.data)?.getTime() ?? 0) - (safeParseDate(a.data)?.getTime() ?? 0)
         );
-        u.historico = u.historico.slice(0, 5);
 
-        // Sort Content History (desc) and keep 5
         u.conteudoRecente.sort((a, b) =>
             (safeParseDate(b.data)?.getTime() ?? 0) - (safeParseDate(a.data)?.getTime() ?? 0)
         );
-        u.conteudoRecente = u.conteudoRecente.slice(0, 5);
     });
 
     // ── Progress by content ───────────────────────────────────────────────────
@@ -278,6 +274,10 @@ function computeProgressByContent(
     });
 
     // 4) Flatten into array
+    // Show entries that represent real activity:
+    //   - any reported progress > 0%, OR
+    //   - at least one completed lesson (covers cases where the enrollment
+    //     endpoint lags or returns 0% even though lessons were completed)
     const result: ProgressoConteudo[] = [];
     Object.values(conteudosPorUsuario).forEach((cursos) => {
         Object.values(cursos).forEach((curso) => {
@@ -286,8 +286,8 @@ function computeProgressByContent(
                     ? Math.max(0, Math.min(100, curso.progresso))
                     : 0;
 
-            // Skip entries with 0% progress – only show actual progress
-            if (pct > 0) {
+            const hasActivity = pct > 0 || curso.aulasCompletas > 0;
+            if (hasActivity) {
                 result.push({
                     nome: curso.nome,
                     email: curso.email,

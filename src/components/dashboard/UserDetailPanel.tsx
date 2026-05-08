@@ -91,7 +91,6 @@ export default function UserDetailPanel({ user, onClose }: UserDetailPanelProps)
                             <div className="relative border-l border-prosperus-white/10 ml-2 space-y-6 pb-2">
                                 {user.historico
                                     .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')))
-                                    .slice(0, 5)
                                     .map((h, i) => (
                                         <div key={i} className="relative pl-6">
                                             <div className="absolute -left-1.5 top-1.5 w-3 h-3 rounded-full bg-prosperus-midnight border-2 border-prosperus-gold" />
