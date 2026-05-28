@@ -1,5 +1,5 @@
 import type { Handler, HandlerEvent } from "@netlify/functions";
-import { google } from "googleapis";
+import { google, sheets_v4 } from "googleapis";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -11,6 +11,28 @@ function getCorsHeaders(): Record<string, string> {
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
   };
+}
+
+// Pin the read to a specific tab by gid (from the sheet URL). Falls back to the
+// first visible tab when GOOGLE_SHEET_GID is unset, preserving legacy behavior.
+async function resolveReferenceRange(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+): Promise<string> {
+  const gid = process.env.GOOGLE_SHEET_GID?.trim();
+  if (!gid) return "A:Z";
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties(sheetId,title)",
+  });
+  const title = (meta.data.sheets ?? []).find(
+    (s) => String(s.properties?.sheetId) === gid,
+  )?.properties?.title;
+  if (!title) {
+    throw new Error(`Sheet tab with gid ${gid} not found in spreadsheet`);
+  }
+  return `'${title.replace(/'/g, "''")}'!A:Z`;
 }
 
 // ─── Handler ────────────────────────────────────────────────────────────────
@@ -54,9 +76,10 @@ const handler: Handler = async (event: HandlerEvent) => {
 
     // AC2: Read spreadsheet data via Google Sheets API v4
     const sheets = google.sheets({ version: "v4", auth });
+    const range = await resolveReferenceRange(sheets, sheetId);
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: "A:Z", // Dynamic range — reads all columns present in the spreadsheet
+      range, // '<tab>'!A:Z — pinned tab, all columns present
     });
 
     const rows = response.data.values;

@@ -36,6 +36,8 @@ jobs:
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          # gid da aba "Referência" (não é segredo — vem da URL da planilha)
+          GOOGLE_SHEET_GID: '1568469200'
           PROSPERUS_WEBHOOK_URL: ${{ secrets.PROSPERUS_WEBHOOK_URL }}
           PROSPERUS_WEBHOOK_SECRET: ${{ secrets.PROSPERUS_WEBHOOK_SECRET }}
 

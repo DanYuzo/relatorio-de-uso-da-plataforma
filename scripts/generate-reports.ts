@@ -6,7 +6,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { google } from 'googleapis';
+import { google, sheets_v4 } from 'googleapis';
 
 import type {
   ReferenciaRow,
@@ -58,6 +58,28 @@ function validateEnv(): void {
 
 // ─── Google Sheets Reader ──────────────────────────────────────────────────
 
+// Pin the read to a specific tab by gid (from the sheet URL). Falls back to the
+// first visible tab when GOOGLE_SHEET_GID is unset, preserving legacy behavior.
+async function resolveReferenceRange(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+): Promise<string> {
+  const gid = process.env.GOOGLE_SHEET_GID?.trim();
+  if (!gid) return 'A:Z';
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties(sheetId,title)',
+  });
+  const title = (meta.data.sheets ?? []).find(
+    (s) => String(s.properties?.sheetId) === gid,
+  )?.properties?.title;
+  if (!title) {
+    throw new Error(`Sheet tab with gid ${gid} not found in spreadsheet`);
+  }
+  return `'${title.replace(/'/g, "''")}'!A:Z`;
+}
+
 async function readReferenciaFromSheets(): Promise<ReferenciaRow[]> {
   const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS!);
   const auth = new google.auth.GoogleAuth({
@@ -66,9 +88,12 @@ async function readReferenciaFromSheets(): Promise<ReferenciaRow[]> {
   });
 
   const sheets = google.sheets({ version: 'v4', auth });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
+  const range = await resolveReferenceRange(sheets, spreadsheetId);
+  console.log(`[SHEETS] Reading range: ${range}`);
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.GOOGLE_SHEET_ID!,
-    range: 'A:Z', // Dynamic range — reads all columns present in the spreadsheet
+    spreadsheetId,
+    range,
   });
 
   const rows = response.data.values;
