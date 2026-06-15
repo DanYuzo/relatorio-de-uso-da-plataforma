@@ -137,8 +137,13 @@ function getCursEducaHeaders(): Record<string, string> {
   };
 }
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 6;
 const RETRY_BASE_DELAY_MS = 2000;
+// Pause between parallel page batches to smooth the request rate and stay under
+// CursoEduca's throttler.
+const CURSEDUCA_BATCH_DELAY_MS = 250;
+// Statuses worth retrying: 429 (throttling) plus transient 408/5xx errors.
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
 async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -161,9 +166,14 @@ async function fetchCursEducaPage<T>(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
-      // Retry on 500/502/503/504 (transient server errors)
-      if ((response.status === 500 || response.status === 502 || response.status === 503 || response.status === 504) && attempt < MAX_RETRIES) {
-        const delay = RETRY_BASE_DELAY_MS * attempt;
+      // Retry on 429 (throttling) and transient 408/5xx errors.
+      if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_RETRIES) {
+        // Honor the server's Retry-After header when present; otherwise fall
+        // back to exponential backoff (2s, 4s, 8s, 16s, 32s).
+        const retryAfter = Number(response.headers.get('retry-after'));
+        const delay = Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter * 1000
+          : RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
         console.warn(`  [RETRY] ${endpoint} returned ${response.status}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})`);
         await sleep(delay);
         continue;
@@ -233,6 +243,9 @@ async function fetchAllCursEducaPages<T>(
     }
 
     console.log(`  [FETCH] ${endpoint}: ${allData.length}/${totalCount} records loaded`);
+
+    // Throttle: brief pause before the next batch to avoid tripping HTTP 429.
+    if (hasMore) await sleep(CURSEDUCA_BATCH_DELAY_MS);
   }
 
   return allData;
@@ -276,12 +289,13 @@ async function main(): Promise<void> {
 
   // Step 3: Fetch CursoEduca API data
   console.log('[STEP] Fetching CursoEduca API data...');
-  const [members, accessReports, progressReports, enrollments] = await Promise.all([
-    fetchMembers(),
-    fetchAccessReports(),
-    fetchProgressReports(),
-    fetchEnrollments(),
-  ]);
+  // Fetch endpoints sequentially (not Promise.all): running all four at once
+  // multiplied the concurrent request rate and tripped CursoEduca's throttler
+  // (HTTP 429 on /reports/progress).
+  const members = await fetchMembers();
+  const accessReports = await fetchAccessReports();
+  const progressReports = await fetchProgressReports();
+  const enrollments = await fetchEnrollments();
   console.log(`[OK] API data fetched:`);
   console.log(`  Members: ${members.length}`);
   console.log(`  Access reports: ${accessReports.length}`);
