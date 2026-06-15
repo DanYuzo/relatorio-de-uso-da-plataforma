@@ -60,16 +60,16 @@ export async function loadData(
     const referencia: ReferenciaRow[] = await res.json();
     onProgress?.('Referência', 'Planilha carregada', 100);
 
-    // Step 2: Fetch 4 API datasets in parallel
+    // Step 2: Fetch the 4 API datasets sequentially (not Promise.all): running
+    // them all at once multiplied the request rate and tripped CursoEduca's
+    // throttler (HTTP 429).
     const scoped = (label: string) =>
       onProgress ? (msg: string, pct: number) => onProgress(label, msg, pct) : undefined;
 
-    const [members, access, progress, enrollments] = await Promise.all([
-      fetchMembers(scoped('Membros')),
-      fetchAccessReports(dateRange, scoped('Acessos')),
-      fetchProgressReports(dateRange, scoped('Conclusões')),
-      fetchEnrollments(scoped('Matrículas')),
-    ]);
+    const members = await fetchMembers(scoped('Membros'));
+    const access = await fetchAccessReports(dateRange, scoped('Acessos'));
+    const progress = await fetchProgressReports(dateRange, scoped('Conclusões'));
+    const enrollments = await fetchEnrollments(scoped('Matrículas'));
 
     // Step 3: Build dataset
     return buildParsedDatasetFromApi(referencia, members, access, progress, enrollments);
@@ -82,13 +82,12 @@ export async function loadData(
   const scoped = (label: string) =>
     onProgress ? (msg: string, pct: number) => onProgress(label, msg, pct) : undefined;
 
-  // Fetch all 4 endpoints in parallel
-  const [members, access, progress, enrollments] = await Promise.all([
-    fetchMembers(scoped('Membros')),
-    fetchAccessReports(dateRange, scoped('Acessos')),
-    fetchProgressReports(dateRange, scoped('Conclusões')),
-    fetchEnrollments(scoped('Matrículas')),
-  ]);
+  // Fetch the 4 endpoints sequentially (not Promise.all) to stay under
+  // CursoEduca's throttler (HTTP 429).
+  const members = await fetchMembers(scoped('Membros'));
+  const access = await fetchAccessReports(dateRange, scoped('Acessos'));
+  const progress = await fetchProgressReports(dateRange, scoped('Conclusões'));
+  const enrollments = await fetchEnrollments(scoped('Matrículas'));
 
   return buildParsedDatasetFromApi(
     referencia,

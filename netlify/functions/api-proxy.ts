@@ -129,12 +129,20 @@ const handler: Handler = async (event: HandlerEvent) => {
 
     const data = await response.text();
 
+    const responseHeaders: Record<string, string> = {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    };
+    // Propagate Retry-After so the client can honor the API's throttling window.
+    const retryAfter = response.headers.get("retry-after");
+    if (retryAfter) {
+      responseHeaders["Retry-After"] = retryAfter;
+      responseHeaders["Access-Control-Expose-Headers"] = "Retry-After";
+    }
+
     return {
       statusCode: response.status,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-      },
+      headers: responseHeaders,
       body: data,
     };
   } catch (error) {
